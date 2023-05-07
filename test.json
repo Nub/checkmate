@@ -1,0 +1,51 @@
+{
+  "name": "Test",
+  "tasks": [
+    {
+      "Script": {
+        "name": "local: bash_version",
+        "destination": "Local",
+        "environment": "None",
+        "shell": "Bash",
+        "execution": "Blocking",
+        "script": "bash --version"
+      }
+    },
+    {
+      "Script": {
+        "name": "znix: bash_version",
+        "destination": {
+          "Remote": "zthayer@10.17.68.57"
+        },
+        "environment": "None",
+        "shell": "Bash",
+        "execution": "Blocking",
+        "script": "bash --version"
+      }
+    },
+    {
+      "Serial": [
+        {
+          "name": "write",
+          "destination": {
+            "Remote": "zthayer@10.17.68.57"
+          },
+          "environment": "None",
+          "shell": "Bash",
+          "execution": "Blocking",
+          "script": "date >> /tmp/date.tmp"
+        },
+        {
+          "name": "read",
+          "destination": {
+            "Remote": "zthayer@10.17.68.57"
+          },
+          "environment": "None",
+          "shell": "Bash",
+          "execution": "Blocking",
+          "script": "cat /tmp/date.tmp"
+        }
+      ]
+    }
+  ]
+}

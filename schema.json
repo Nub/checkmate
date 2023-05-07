@@ -1,0 +1,167 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Job",
+  "description": "Tasks are always ran in parallel",
+  "type": "object",
+  "required": [
+    "name",
+    "tasks"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Task"
+      }
+    }
+  },
+  "definitions": {
+    "Destination": {
+      "oneOf": [
+        {
+          "description": "Run on the machine making the call",
+          "type": "string",
+          "enum": [
+            "Local"
+          ]
+        },
+        {
+          "description": "Run on a remote machine via ssh",
+          "type": "object",
+          "required": [
+            "Remote"
+          ],
+          "properties": {
+            "Remote": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Environment": {
+      "oneOf": [
+        {
+          "description": "Clear out all env variables",
+          "type": "string",
+          "enum": [
+            "None"
+          ]
+        },
+        {
+          "description": "Use the current env variables",
+          "type": "string",
+          "enum": [
+            "Current"
+          ]
+        }
+      ]
+    },
+    "Execution": {
+      "oneOf": [
+        {
+          "description": "Run inline",
+          "type": "string",
+          "enum": [
+            "Blocking"
+          ]
+        },
+        {
+          "description": "Spawn as a child process into the background",
+          "type": "string",
+          "enum": [
+            "Background"
+          ]
+        }
+      ]
+    },
+    "Script": {
+      "type": "object",
+      "required": [
+        "destination",
+        "environment",
+        "execution",
+        "name",
+        "script",
+        "shell"
+      ],
+      "properties": {
+        "destination": {
+          "$ref": "#/definitions/Destination"
+        },
+        "environment": {
+          "$ref": "#/definitions/Environment"
+        },
+        "execution": {
+          "$ref": "#/definitions/Execution"
+        },
+        "name": {
+          "type": "string"
+        },
+        "script": {
+          "type": "string"
+        },
+        "shell": {
+          "$ref": "#/definitions/Shell"
+        }
+      }
+    },
+    "Shell": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Bash"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "Custom"
+          ],
+          "properties": {
+            "Custom": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Task": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "Script"
+          ],
+          "properties": {
+            "Script": {
+              "$ref": "#/definitions/Script"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "Serial"
+          ],
+          "properties": {
+            "Serial": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Script"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
