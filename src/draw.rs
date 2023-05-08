@@ -3,9 +3,7 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{
-        Block, Borders, Cell, Paragraph, Row, Table, TableState, Wrap,
-    },
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
 
@@ -82,7 +80,7 @@ impl State {
                             .join(" "),
                     ),
                     Err(e) => (
-                        Cell::from("In progress").style(Style::default()),
+                        Cell::from("In progress").style(Style::default().fg(Color::Blue)),
                         format!("{e}"),
                     ),
                     x => (
@@ -103,9 +101,9 @@ impl State {
             )
             // .style(Style::default().fg(Color::White))
             .widths(&[
-                Constraint::Percentage(15),
+                Constraint::Percentage(30),
                 Constraint::Percentage(10),
-                Constraint::Percentage(75),
+                Constraint::Percentage(60),
             ])
             .highlight_style(
                 Style::default()
@@ -133,15 +131,15 @@ impl State {
             .borrow();
         let (status, output) = match &(*thread) {
             Ok(TaskResult::Script(Err(e))) => (
-                Cell::from("Failed").style(Style::default().fg(Color::Red)),
+                Span::styled("Failed", Style::default().fg(Color::Red)),
                 "".to_string(),
             ),
             Ok(TaskResult::Script(Ok(x))) => (
-                Cell::from("Complete").style(Style::default().fg(Color::Green)),
+                Span::styled("Complete", Style::default().fg(Color::Green)),
                 String::from_utf8(x.stdout.clone()).expect("Failed to make string"),
             ),
             Ok(TaskResult::Serial(x)) => (
-                Cell::from("Complete").style(Style::default().fg(Color::Green)),
+                Span::styled("Complete", Style::default().fg(Color::Green)),
                 x.iter()
                     .enumerate()
                     .map(|(i, x)| {
@@ -164,7 +162,7 @@ impl State {
                     .join("\n\n"),
             ),
             Err(e) => (
-                Cell::from("In progress").style(Style::default()),
+                Span::styled("In progress", Style::default().fg(Color::Blue)),
                 format!("{e}"),
             ),
         };
@@ -177,11 +175,14 @@ impl State {
         let paragraph = Paragraph::new(text)
             .block(
                 Block::default()
-                    .title(format!(
-                        "Job: {} | \tTask: {}",
-                        runner.job.name,
-                        runner.job.tasks[self.job_table.selected().expect("")].name()
-                    ))
+                    .title(Spans::from(vec![
+                        Span::raw(format!(
+                            "Job: {} - Task: {} - ",
+                            runner.job.name,
+                            runner.job.tasks[self.job_table.selected().expect("")].name()
+                        )),
+                        status,
+                    ]))
                     .borders(Borders::ALL),
             )
             // .style(Style::default().fg(Color::White).bg(Color::Black))
@@ -200,7 +201,7 @@ impl State {
 
     fn help<'a>() -> Paragraph<'a> {
         let text = vec![Spans::from(vec![Span::raw(
-            "Q: Quit ⎯⎯⎯ Enter: View full log ⎯⎯⎯ Esc: Go back to Job view",
+            "Q: Quit ⎯⎯⎯  ↑/↓: Navigate ⎯⎯⎯  Enter: View full log ⎯⎯⎯  Esc: Go back to Job view",
         )])];
         let paragraph = Paragraph::new(text)
             .block(Block::default().title("Commands").borders(Borders::ALL))

@@ -105,20 +105,11 @@ pub enum Shell {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, StaticType, JsonSchema)]
-pub enum Execution {
-    /// Run inline
-    Blocking,
-    /// Spawn as a child process into the background
-    Background,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, StaticType, JsonSchema)]
 pub struct Script {
     pub name: String,
     pub destination: Destination,
     pub environment: Environment,
     pub shell: Shell,
-    pub execution: Execution,
     pub script: String,
 }
 
@@ -129,7 +120,6 @@ impl Default for Script {
             destination: Destination::Local,
             environment: Environment::None,
             shell: Shell::Bash,
-            execution: Execution::Blocking,
             script: "bash --version".into(),
         }
     }
