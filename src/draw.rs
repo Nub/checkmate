@@ -6,7 +6,7 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
+    widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
 
@@ -114,7 +114,8 @@ impl State {
             .block(
                 Block::default()
                     .title(format!("Job: {}", runner.job.name))
-                    .borders(Borders::ALL),
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded),
             )
             // .style(Style::default().fg(Color::White))
             .widths(&[
@@ -135,7 +136,13 @@ impl State {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
-            .constraints([Constraint::Percentage(95), Constraint::Min(1)].as_ref())
+            .constraints(
+                [
+                    Constraint::Percentage(95),
+                    Constraint::Min(1),
+                ]
+                .as_ref(),
+            )
             .split(f.size());
 
         f.render_stateful_widget(table, chunks[0], &mut self.job_table);
@@ -224,13 +231,15 @@ impl State {
                 Block::default()
                     .title(Spans::from(vec![
                         Span::raw(format!(
-                            "Job: {} - Task: {} - ",
+                            "Job: {} - Task[{}]: {} - ",
                             runner.job.name,
+                            self.job_table.selected().expect(""),
                             runner.job.tasks[self.job_table.selected().expect("")].name()
                         )),
                         status,
                     ]))
-                    .borders(Borders::ALL),
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded),
             )
             // .style(Style::default().fg(Color::White).bg(Color::Black))
             .alignment(Alignment::Left)
@@ -239,7 +248,13 @@ impl State {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
-            .constraints([Constraint::Percentage(95), Constraint::Min(1)].as_ref())
+            .constraints(
+                [
+                    Constraint::Percentage(95),
+                    Constraint::Min(1),
+                ]
+                .as_ref(),
+            )
             .split(f.size());
 
         f.render_widget(paragraph, chunks[0]);
@@ -257,7 +272,28 @@ impl State {
         let text = vec![Spans::from(vec![Span::raw(commands.join(" ⎯⎯⎯  "))])];
 
         let paragraph = Paragraph::new(text)
-            .block(Block::default().title("Commands").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title("")
+                    .borders(Borders::NONE)
+                    .border_type(BorderType::Rounded),
+            )
+            // .style(Style::default().fg(Color::White).bg(Color::Black))
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: true });
+        paragraph
+    }
+
+    fn title<'a>() -> Paragraph<'a> {
+        let text = vec![Spans::from(vec![Span::raw("♚ Checkmate ♔")])];
+
+        let paragraph = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .title("")
+                    .borders(Borders::NONE)
+                    .border_type(BorderType::Rounded),
+            )
             // .style(Style::default().fg(Color::White).bg(Color::Black))
             .alignment(Alignment::Center)
             .wrap(Wrap { trim: true });
