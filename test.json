@@ -26,7 +26,7 @@
         {
           "name": "write",
           "destination": {
-            "Remote": "zthayer@10.17.68.57"
+            "Remote": "zthayer@10.17.68.57x"
           },
           "environment": "None",
           "shell": "Bash",

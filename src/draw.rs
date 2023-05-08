@@ -1,3 +1,6 @@
+use anyhow::{anyhow, Result};
+use checkmate::{JobRunner, Task, TaskResult};
+use std::process::Output;
 use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -6,8 +9,6 @@ use tui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
-
-use checkmate::{JobRunner, Task, TaskResult};
 
 pub struct State {
     pub job_table: TableState,
@@ -63,22 +64,38 @@ impl State {
                 let (status, output) = match &(*jr.thread.borrow()) {
                     Ok(TaskResult::Script(Err(e))) => (
                         Cell::from("Failed").style(Style::default().fg(Color::Red)),
-                        "".to_string(),
+                        format!("{e:?}"),
                     ),
                     Ok(TaskResult::Script(Ok(x))) => (
                         Cell::from("Complete").style(Style::default().fg(Color::Green)),
                         String::from_utf8(x.stdout.clone()).expect("Failed to make string"),
                     ),
-                    Ok(TaskResult::Serial(x)) => (
-                        Cell::from("Complete").style(Style::default().fg(Color::Green)),
-                        x.iter()
-                            .map(|x| {
-                                String::from_utf8(x.as_ref().expect("xXXXx").stdout.clone())
-                                    .expect("Failed to make string")
-                            })
-                            .collect::<Vec<String>>()
-                            .join(" "),
-                    ),
+                    Ok(TaskResult::Serial(x)) => {
+                        let errors = x.iter().fold(String::new(), |acc, x| {
+                            if let Err(e) = x {
+                                format!("{}:{}", acc, e)
+                            } else {
+                                acc
+                            }
+                        });
+
+                        let status = if errors.len() != 0 {
+                            Cell::from("Error").style(Style::default().fg(Color::Red))
+                        } else {
+                            Cell::from("Complete").style(Style::default().fg(Color::Green))
+                        };
+                        (
+                            status,
+                            x.iter()
+                                .map(|x| match &x {
+                                    Ok(x) => String::from_utf8(x.stdout.clone())
+                                        .expect("Failed to make string"),
+                                    Err(e) => format!("{e}"),
+                                })
+                                .collect::<Vec<String>>()
+                                .join(" "),
+                        )
+                    }
                     Err(e) => (
                         Cell::from("In progress").style(Style::default().fg(Color::Blue)),
                         format!("{e}"),
@@ -132,35 +149,50 @@ impl State {
         let (status, output) = match &(*thread) {
             Ok(TaskResult::Script(Err(e))) => (
                 Span::styled("Failed", Style::default().fg(Color::Red)),
-                "".to_string(),
+                format!("{e:?}"),
             ),
             Ok(TaskResult::Script(Ok(x))) => (
                 Span::styled("Complete", Style::default().fg(Color::Green)),
                 String::from_utf8(x.stdout.clone()).expect("Failed to make string"),
             ),
-            Ok(TaskResult::Serial(x)) => (
-                Span::styled("Complete", Style::default().fg(Color::Green)),
-                x.iter()
-                    .enumerate()
-                    .map(|(i, x)| {
-                        let task_name = if let Task::Serial(t) =
-                            &runner.job.tasks[self.job_table.selected().expect("NO SELECTION")]
-                        {
-                            t[i].name.clone()
-                        } else {
-                            "".to_string()
-                        };
-                        format!(
-                            "Task[{}] {}:\n{}",
-                            i,
-                            task_name,
-                            String::from_utf8(x.as_ref().expect("xXXXx").stdout.clone())
-                                .expect("Failed to make string")
-                        )
-                    })
-                    .collect::<Vec<String>>()
-                    .join("\n\n"),
-            ),
+            Ok(TaskResult::Serial(x)) => {
+                let errors = x.iter().fold(String::new(), |acc, x| {
+                    if let Err(e) = x {
+                        format!("{}:{}", acc, e)
+                    } else {
+                        acc
+                    }
+                });
+
+                let status = if errors.len() != 0 {
+                    Span::styled("Error", Style::default().fg(Color::Red))
+                } else {
+                    Span::styled("Complete", Style::default().fg(Color::Green))
+                };
+
+                (
+                    status,
+                    x.iter()
+                        .enumerate()
+                        .map(|(i, x)| {
+                            let task_name = if let Task::Serial(t) =
+                                &runner.job.tasks[self.job_table.selected().expect("NO SELECTION")]
+                            {
+                                t[i].name.clone()
+                            } else {
+                                "".to_string()
+                            };
+                            let output = match &x {
+                                Ok(x) => String::from_utf8(x.stdout.clone())
+                                    .expect("Failed to make string"),
+                                Err(e) => format!("{e}"),
+                            };
+                            format!("Task[{}] {}:\n{}", i, task_name, output)
+                        })
+                        .collect::<Vec<String>>()
+                        .join("\n\n"),
+                )
+            }
             Err(e) => (
                 Span::styled("In progress", Style::default().fg(Color::Blue)),
                 format!("{e}"),
@@ -200,9 +232,15 @@ impl State {
     }
 
     fn help<'a>() -> Paragraph<'a> {
-        let text = vec![Spans::from(vec![Span::raw(
-            "Q: Quit ⎯⎯⎯  ↑/↓: Navigate ⎯⎯⎯  Enter: View full log ⎯⎯⎯  Esc: Go back to Job view",
-        )])];
+        let commands = vec![
+            "<ctrl+c>: Quit",
+            "<↑/↓>: Navigate",
+            "<enter>: View full logs",
+            "<esc> Go back to Job view",
+        ];
+
+        let text = vec![Spans::from(vec![Span::raw(commands.join(" ⎯⎯⎯  "))])];
+
         let paragraph = Paragraph::new(text)
             .block(Block::default().title("Commands").borders(Borders::ALL))
             // .style(Style::default().fg(Color::White).bg(Color::Black))

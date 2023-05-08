@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use checkmate::{Destination, Job, Script, Task};
 use clap::Parser;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -61,10 +61,13 @@ fn main() -> Result<()> {
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_secs(0));
+
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
+                if KeyCode::Char('c') == key.code && key.modifiers == KeyModifiers::CONTROL {
+                    break;
+                }
                 match key.code {
-                    KeyCode::Char('q') => return Ok(()),
                     KeyCode::Up => {
                         state.up_key();
                     }
