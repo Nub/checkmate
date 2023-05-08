@@ -149,11 +149,13 @@ impl State {
         let (status, output) = match &(*thread) {
             Ok(TaskResult::Script(Err(e))) => (
                 Span::styled("Failed", Style::default().fg(Color::Red)),
-                format!("{e:?}"),
+                vec![Spans::from(vec![Span::raw(format!("{e:?}"))])],
             ),
             Ok(TaskResult::Script(Ok(x))) => (
                 Span::styled("Complete", Style::default().fg(Color::Green)),
-                String::from_utf8(x.stdout.clone()).expect("Failed to make string"),
+                vec![Spans::from(vec![Span::raw(
+                    String::from_utf8(x.stdout.clone()).expect("Failed to make string"),
+                )])],
             ),
             Ok(TaskResult::Serial(x)) => {
                 let errors = x.iter().fold(String::new(), |acc, x| {
@@ -171,7 +173,7 @@ impl State {
                 };
 
                 (
-                    status,
+                    status.clone(),
                     x.iter()
                         .enumerate()
                         .map(|(i, x)| {
@@ -182,29 +184,42 @@ impl State {
                             } else {
                                 "".to_string()
                             };
+
+                            let status = if x.is_err() {
+                                Span::styled("Error", Style::default().fg(Color::Red))
+                            } else {
+                                Span::styled("Complete", Style::default().fg(Color::Green))
+                            };
+
                             let output = match &x {
                                 Ok(x) => String::from_utf8(x.stdout.clone())
                                     .expect("Failed to make string"),
                                 Err(e) => format!("{e}"),
                             };
-                            format!("Task[{}] {}:\n{}", i, task_name, output)
+
+                            let title_text = format!("Task[{}] {} - ", i, task_name);
+                            let title = Spans::from(vec![Span::raw(title_text.clone()), status]);
+
+                            let mut lines: Vec<Spans> = output
+                                .lines()
+                                .map(|l| Spans::from(vec![Span::raw(String::from(l))]))
+                                .collect();
+                            lines.insert(0, title);
+                            lines.push(Spans::from(vec![Span::raw("⎯".repeat(35))]));
+
+                            lines
                         })
-                        .collect::<Vec<String>>()
-                        .join("\n\n"),
+                        .flatten()
+                        .collect(),
                 )
             }
             Err(e) => (
                 Span::styled("In progress", Style::default().fg(Color::Blue)),
-                format!("{e}"),
+                vec![Spans::from(vec![Span::raw(format!("{e}"))])],
             ),
         };
 
-        let text: Vec<Spans> = output
-            .lines()
-            .map(|l| Spans::from(vec![Span::raw(l)]))
-            .collect();
-
-        let paragraph = Paragraph::new(text)
+        let paragraph = Paragraph::new(output)
             .block(
                 Block::default()
                     .title(Spans::from(vec![
