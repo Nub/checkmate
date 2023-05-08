@@ -4,12 +4,12 @@ use tui::{
     style::{Color, Modifier, Style},
     text::{Span, Spans},
     widgets::{
-        Block, Borders, Cell, List, ListItem, Paragraph, Row, Sparkline, Table, TableState, Wrap,
+        Block, Borders, Cell, Paragraph, Row, Table, TableState, Wrap,
     },
     Frame,
 };
 
-use checkmate::{JobRunner, TaskResult};
+use checkmate::{JobRunner, Task, TaskResult};
 
 pub struct State {
     pub job_table: TableState,
@@ -58,7 +58,6 @@ impl State {
     }
 
     fn draw_job<B: Backend>(&mut self, f: &mut Frame<B>, runner: &JobRunner) {
-
         let rows: Vec<Row> = runner
             .threads
             .iter()
@@ -80,7 +79,7 @@ impl State {
                                     .expect("Failed to make string")
                             })
                             .collect::<Vec<String>>()
-                            .join(","),
+                            .join(" "),
                     ),
                     Err(e) => (
                         Cell::from("In progress").style(Style::default()),
@@ -110,7 +109,7 @@ impl State {
             ])
             .highlight_style(
                 Style::default()
-                    .bg(Color::Rgb(40,40,90))
+                    .bg(Color::Rgb(40, 40, 90))
                     // .fg(Color::Black)
                     .add_modifier(Modifier::BOLD),
             )
@@ -144,20 +143,29 @@ impl State {
             Ok(TaskResult::Serial(x)) => (
                 Cell::from("Complete").style(Style::default().fg(Color::Green)),
                 x.iter()
-                    .map(|x| {
-                        String::from_utf8(x.as_ref().expect("xXXXx").stdout.clone())
-                            .expect("Failed to make string")
+                    .enumerate()
+                    .map(|(i, x)| {
+                        let task_name = if let Task::Serial(t) =
+                            &runner.job.tasks[self.job_table.selected().expect("NO SELECTION")]
+                        {
+                            t[i].name.clone()
+                        } else {
+                            "".to_string()
+                        };
+                        format!(
+                            "Task[{}] {}:\n{}",
+                            i,
+                            task_name,
+                            String::from_utf8(x.as_ref().expect("xXXXx").stdout.clone())
+                                .expect("Failed to make string")
+                        )
                     })
                     .collect::<Vec<String>>()
-                    .join(","),
+                    .join("\n\n"),
             ),
             Err(e) => (
                 Cell::from("In progress").style(Style::default()),
                 format!("{e}"),
-            ),
-            x => (
-                Cell::from("Unknown").style(Style::default()),
-                format!("{:?}", x),
             ),
         };
 
@@ -183,7 +191,7 @@ impl State {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
-            .constraints([Constraint::Percentage(90), Constraint::Min(1)].as_ref())
+            .constraints([Constraint::Percentage(95), Constraint::Min(1)].as_ref())
             .split(f.size());
 
         f.render_widget(paragraph, chunks[0]);
@@ -191,11 +199,9 @@ impl State {
     }
 
     fn help<'a>() -> Paragraph<'a> {
-        let text = vec![
-            Spans::from(vec![
-                Span::raw("Q: Quit ⎯⎯⎯ Enter: View full log ⎯⎯⎯ Esc: Go back to Job view"),
-            ]),
-        ];
+        let text = vec![Spans::from(vec![Span::raw(
+            "Q: Quit ⎯⎯⎯ Enter: View full log ⎯⎯⎯ Esc: Go back to Job view",
+        )])];
         let paragraph = Paragraph::new(text)
             .block(Block::default().title("Commands").borders(Borders::ALL))
             // .style(Style::default().fg(Color::White).bg(Color::Black))
