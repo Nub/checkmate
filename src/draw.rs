@@ -61,14 +61,16 @@ impl State {
             .threads
             .iter()
             .map(|jr| {
-                let (status, output) = match &(*jr.thread.borrow()) {
+                let (status, ty, output) = match &(*jr.thread.borrow()) {
                     Ok(TaskResult::Script(Err(e))) => (
                         Cell::from("Failed").style(Style::default().fg(Color::Red)),
-                        format!("{e:?}"),
+                        Cell::from(format!("{}", jr.task)),
+                        Cell::from(format!("{e:?}")),
                     ),
                     Ok(TaskResult::Script(Ok(x))) => (
                         Cell::from("Complete").style(Style::default().fg(Color::Green)),
-                        String::from_utf8(x.stdout.clone()).expect("Failed to make string"),
+                        Cell::from(format!("{}", jr.task)),
+                        Cell::from(String::from_utf8(x.stdout.clone()).expect("Failed to make string")),
                     ),
                     Ok(TaskResult::Serial(x)) => {
                         let errors = x.iter().fold(String::new(), |acc, x| {
@@ -86,27 +88,30 @@ impl State {
                         };
                         (
                             status,
-                            x.iter()
+                        Cell::from(format!("{:?}", jr.task)),
+                            Cell::from(x.iter()
                                 .map(|x| match &x {
                                     Ok(x) => String::from_utf8(x.stdout.clone())
                                         .expect("Failed to make string"),
                                     Err(e) => format!("{e}"),
                                 })
                                 .collect::<Vec<String>>()
-                                .join(" "),
+                                .join(" ")),
                         )
                     }
                     Err(e) => (
                         Cell::from("In progress").style(Style::default().fg(Color::Blue)),
-                        format!("{e}"),
+                        Cell::from(format!("{}", jr.task)),
+                        Cell::from(format!("{e}")),
                     ),
                     x => (
                         Cell::from("Unknown").style(Style::default()),
-                        format!("{:?}", x),
+                        Cell::from(format!("{}", jr.task)),
+                        Cell::from(format!("{:?}", x)),
                     ),
                 };
 
-                Row::new(vec![Cell::from(jr.task.name()), status, Cell::from(output)])
+                Row::new(vec![Cell::from(jr.task.name()), status, ty, output])
             })
             .collect();
 
@@ -119,19 +124,23 @@ impl State {
             )
             // .style(Style::default().fg(Color::White))
             .widths(&[
-                Constraint::Percentage(30),
-                Constraint::Percentage(10),
+                Constraint::Percentage(20),
+                Constraint::Percentage(6),
+                Constraint::Percentage(14),
                 Constraint::Percentage(60),
             ])
             .highlight_style(
                 Style::default()
                     .bg(Color::Rgb(40, 40, 90))
                     // .fg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
+                    // .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("> ")
             .column_spacing(1)
-            .header(Row::new(vec!["Task", "Status", "Output"]).bottom_margin(1));
+            .header(Row::new(vec!["Task", "Status", "Type", "Output"])
+                .bottom_margin(1)
+                .style(Style::default().add_modifier(Modifier::BOLD))
+            );
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)

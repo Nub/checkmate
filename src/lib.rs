@@ -23,6 +23,7 @@ pub struct JobThread {
     pub thread: Receiver<Result<TaskResult>>,
 }
 
+
 #[derive(Clone, Debug)]
 pub struct JobRunner {
     pub job: Job,
@@ -209,6 +210,15 @@ impl Shell {
         match self {
             Shell::Bash => Ok("bash".into()),
             Shell::Custom(x) => Ok(x.clone()),
+        }
+    }
+}
+
+impl std::fmt::Display for Task {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Task::Script(s) => write!(f, "{:?}", s.destination),
+            _ => write!(f, "Serial")
         }
     }
 }
