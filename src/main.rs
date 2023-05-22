@@ -74,10 +74,10 @@ fn main() -> Result<()> {
                     KeyCode::Down => {
                         state.down_key(runner.job.tasks.len() - 1);
                     }
-                    KeyCode::Enter => {
+                    KeyCode::Enter | KeyCode::Right => {
                         state.enter_key();
                     }
-                    KeyCode::Esc | KeyCode::Backspace => {
+                    KeyCode::Esc | KeyCode::Backspace | KeyCode::Left => {
                         state.back_key();
                     }
                     _ => (),

@@ -70,7 +70,9 @@ impl State {
                     Ok(TaskResult::Script(Ok(x))) => (
                         Cell::from("Complete").style(Style::default().fg(Color::Green)),
                         Cell::from(format!("{}", jr.task)),
-                        Cell::from(String::from_utf8(x.stdout.clone()).expect("Failed to make string")),
+                        Cell::from(
+                            String::from_utf8(x.stdout.clone()).expect("Failed to make string"),
+                        ),
                     ),
                     Ok(TaskResult::Serial(x)) => {
                         let errors = x.iter().fold(String::new(), |acc, x| {
@@ -88,15 +90,17 @@ impl State {
                         };
                         (
                             status,
-                        Cell::from(format!("{:?}", jr.task)),
-                            Cell::from(x.iter()
-                                .map(|x| match &x {
-                                    Ok(x) => String::from_utf8(x.stdout.clone())
-                                        .expect("Failed to make string"),
-                                    Err(e) => format!("{e}"),
-                                })
-                                .collect::<Vec<String>>()
-                                .join(" ")),
+                            Cell::from(format!("{:?}", jr.task)),
+                            Cell::from(
+                                x.iter()
+                                    .map(|x| match &x {
+                                        Ok(x) => String::from_utf8(x.stdout.clone())
+                                            .expect("Failed to make string"),
+                                        Err(e) => format!("{e}"),
+                                    })
+                                    .collect::<Vec<String>>()
+                                    .join(" "),
+                            ),
                         )
                     }
                     Err(e) => (
@@ -130,28 +134,21 @@ impl State {
                 Constraint::Percentage(60),
             ])
             .highlight_style(
-                Style::default()
-                    .bg(Color::Rgb(40, 40, 90))
-                    // .fg(Color::Black)
-                    // .add_modifier(Modifier::BOLD),
+                Style::default().bg(Color::Rgb(40, 40, 90)), // .fg(Color::Black)
+                                                             // .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("> ")
             .column_spacing(1)
-            .header(Row::new(vec!["Task", "Status", "Type", "Output"])
-                .bottom_margin(1)
-                .style(Style::default().add_modifier(Modifier::BOLD))
+            .header(
+                Row::new(vec!["Task", "Status", "Type", "Output"])
+                    .bottom_margin(1)
+                    .style(Style::default().add_modifier(Modifier::BOLD)),
             );
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
-            .constraints(
-                [
-                    Constraint::Percentage(95),
-                    Constraint::Min(1),
-                ]
-                .as_ref(),
-            )
+            .constraints([Constraint::Percentage(95), Constraint::Min(1)].as_ref())
             .split(f.size());
 
         f.render_stateful_widget(table, chunks[0], &mut self.job_table);
@@ -257,13 +254,7 @@ impl State {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
-            .constraints(
-                [
-                    Constraint::Percentage(95),
-                    Constraint::Min(1),
-                ]
-                .as_ref(),
-            )
+            .constraints([Constraint::Percentage(95), Constraint::Min(1)].as_ref())
             .split(f.size());
 
         f.render_widget(paragraph, chunks[0]);
@@ -278,7 +269,7 @@ impl State {
             "<esc> Go back to Job view",
         ];
 
-        let text = vec![Spans::from(vec![Span::raw(commands.join(" ⎯⎯⎯  "))])];
+        let text = vec![Spans::from(vec![Span::raw(commands.join("    "))])];
 
         let paragraph = Paragraph::new(text)
             .block(

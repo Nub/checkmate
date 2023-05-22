@@ -7,8 +7,10 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
-use tokio::sync::watch::{channel, Receiver};
 use tokio::runtime::Runtime;
+use tokio::sync::watch::{channel, Receiver};
+
+mod command;
 
 /// Tasks are always ran in parallel
 #[derive(Clone, Debug, Serialize, Deserialize, StaticType, JsonSchema)]
@@ -22,7 +24,6 @@ pub struct JobThread {
     pub task: Task,
     pub thread: Receiver<Result<TaskResult>>,
 }
-
 
 #[derive(Clone, Debug)]
 pub struct JobRunner {
@@ -218,7 +219,7 @@ impl std::fmt::Display for Task {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Task::Script(s) => write!(f, "{:?}", s.destination),
-            _ => write!(f, "Serial")
+            _ => write!(f, "Serial"),
         }
     }
 }
