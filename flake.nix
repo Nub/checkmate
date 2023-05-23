@@ -30,6 +30,7 @@
         devShell = pkgs.mkShell {
           nativeBuildInputs = with pkgs;[ 
             rustc
+            rust-analyzer
             cargo
             openssl
             pkg-config
