@@ -1,29 +1,32 @@
 use anyhow::{anyhow, Result};
-use std::process;
-use std::process::{Command, Output, ExitStatus};
-use tokio::sync::watch::{channel, Receiver};
+use openssh::{KnownHosts, Session};
 use std::io::Read;
+use std::process;
+use std::process::{Command, ExitStatus, Output};
 use std::sync::{Arc, Mutex};
+use tokio::sync::watch::{channel, Receiver};
 
 use super::Destination;
 
-struct AsyncCommand {
+#[derive(Debug, Clone)]
+struct CommandRunner {
     stdout: Arc<Mutex<Vec<u8>>>,
     stderr: Arc<Mutex<Vec<u8>>>,
     status: Arc<Mutex<Option<ExitStatus>>>,
-    task: Receiver<Result<Output>>,
+    complete: Arc<Mutex<Result<()>>>,
 }
 
-impl AsyncCommand {
-    fn from_command(mut cmd: Command) -> Self {
+impl CommandRunner {
+    pub fn from_command(mut cmd: Command) -> Self {
         let stdout = Arc::new(Mutex::new(vec![]));
         let stderr = Arc::new(Mutex::new(vec![]));
         let status = Arc::new(Mutex::new(None));
-        let (tx, rx) = channel(Err(anyhow!("No data")));
+        let complete = Arc::new(Mutex::new(false));
 
         let stdout_bg = stdout.clone();
         let stderr_bg = stderr.clone();
         let status_bg = status.clone();
+        let complete_bg = complete.clone();
 
         std::thread::spawn(move || {
             let mut child = cmd.spawn().expect("Failed to spawn command");
@@ -32,9 +35,11 @@ impl AsyncCommand {
 
             loop {
                 match child.try_wait() {
-                    Ok(Some(status)) => return (),
+                    Ok(Some(status)) => {
+                        *status_bg.lock().expect("Failed to lock status") = Some(status);
+                        *complete_bg.lock().expect("Failed to lock complete") = Ok(());
+                    }
                     Ok(None) => {
-                        *status_bg.lock().expect("Failed to lock status") = child.wait().ok();
                         stdout
                             .read(&mut *stdout_bg.lock().expect("Failed to lock stdout"))
                             .expect("Failed to read stdout");
@@ -42,11 +47,59 @@ impl AsyncCommand {
                             .read(&mut *stdout_bg.lock().expect("Failed to lock stdout"))
                             .expect("Failed to read stdout");
                     }
-                    Err(e) => panic!("Failed running child {:?}", e),
+                    Err(e) => {
+                        *complete_bg.lock().expect("Failed to lock complete") =
+                            Err(anyhow!("Failed to complete async command"));
+                    }
                 }
 
-                std::thread::sleep(std::time::Duration::from_millis(10))
+                //Rate limit polling to 10hz
+                std::thread::sleep(std::time::Duration::from_millis(100))
             }
+        });
+
+        Self {
+            stdout,
+            stderr,
+            status,
+            complete,
+        }
+    }
+
+    pub fn from_session(mut cmd: Session) -> Self {
+        let stdout = Arc::new(Mutex::new(vec![]));
+        let stderr = Arc::new(Mutex::new(vec![]));
+        let status = Arc::new(Mutex::new(None));
+        let complete = Arc::new(Mutex::new(false));
+
+        let stdout_bg = stdout.clone();
+        let stderr_bg = stderr.clone();
+        let status_bg = status.clone();
+        let complete_bg = complete.clone();
+
+        std::thread::spawn(move || {
+            let runtime = Runtime::new()?;
+            runtime.block_on(async move {
+                let child = session.spawn().await.expect("Failed to spawn child");
+                let mut stdout = child.stdout().take().unwrap();
+                let mut stderr = child.stderr().take().unwrap();
+
+                let stdout_task = runtime.spawn(async move {});
+                let stderr_task = runtime.spawn(async move {});
+
+                match child.wait().await.expect("Failed to get exit status") {
+                    Ok(status) => {
+                        *status_bg.lock().expect("Failed to lock status") = Some(status);
+                        *complete_bg.lock().expect("Failed to lock complete") = Ok(true);
+                        stdout_task.abort();
+                        stderr_task.abort();
+                    },
+                    Err(e) => {
+                        *complete_bg.lock().expect("Failed to lock complete") =
+                            Err(anyhow!("Failed to complete async command"));
+                    }
+                }
+            });
         });
 
         Self {
@@ -55,5 +108,21 @@ impl AsyncCommand {
             status,
             task: rx,
         }
+    }
+
+    pub fn complete(&self) -> Result<()> {
+        self.complete.lock().expect("Failed to lock stdout").clone()
+    }
+
+    pub fn status(&self) -> Option<ExitStatus> {
+        self.status.lock().expect("Failed to lock stdout").clone()
+    }
+
+    pub fn stdout(&self) -> Vec<u8> {
+        self.stdout.lock().expect("Failed to lock stdout").clone()
+    }
+
+    pub fn stderr(&self) -> Vec<u8> {
+        self.stderr.lock().expect("Failed to lock stdout").clone()
     }
 }
