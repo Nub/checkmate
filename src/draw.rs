@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Result};
-use checkmate::{JobRunner, Task, TaskResult};
-use std::process::Output;
+use checkmate::{JobRunner, JobThread, Task, TaskResult};
+use std::process::{ExitStatus, Output};
 use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Span, Spans, Text},
     widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
@@ -57,67 +57,51 @@ impl State {
     }
 
     fn draw_job<B: Backend>(&mut self, f: &mut Frame<B>, runner: &JobRunner) {
+        let columns: Vec<(&str, Constraint, fn(&JobThread) -> String)> = vec![
+            ("Task", Constraint::Percentage(20), |jt| jt.task.name()),
+            ("Status", Constraint::Percentage(6), |jt| {
+                jt.runners.iter().fold(String::new(), |acc, r| {
+                    match r.status() {
+                        Some(s) => {
+                            if s.success() {
+                                "Complete"
+                            } else {
+                                "Failed"
+                            }
+                        }
+                        _ => "In Progress",
+                    }
+                    .to_string()
+                })
+            }),
+            ("Type", Constraint::Percentage(14), |jt| jt.task.type_name()),
+            ("Output", Constraint::Percentage(60), |jt| {
+                jt.runners.iter().fold(String::new(), |acc, r| {
+                    format!(
+                        "{}{:?}",
+                        acc,
+                        String::from_utf8(r.stdout()).expect("Failed to stringify output")
+                    )
+                })
+            }),
+        ];
         let rows: Vec<Row> = runner
             .threads
             .iter()
-            .map(|jr| {
-                let (status, ty, output) = match &(*jr.thread.borrow()) {
-                    Ok(TaskResult::Script(Err(e))) => (
-                        Cell::from("Failed").style(Style::default().fg(Color::Red)),
-                        Cell::from(format!("{}", jr.task)),
-                        Cell::from(format!("{e:?}")),
-                    ),
-                    Ok(TaskResult::Script(Ok(x))) => (
-                        Cell::from("Complete").style(Style::default().fg(Color::Green)),
-                        Cell::from(format!("{}", jr.task)),
-                        Cell::from(
-                            String::from_utf8(x.stdout.clone()).expect("Failed to make string"),
-                        ),
-                    ),
-                    Ok(TaskResult::Serial(x)) => {
-                        let errors = x.iter().fold(String::new(), |acc, x| {
-                            if let Err(e) = x {
-                                format!("{}:{}", acc, e)
-                            } else {
-                                acc
-                            }
-                        });
-
-                        let status = if errors.len() != 0 {
-                            Cell::from("Error").style(Style::default().fg(Color::Red))
-                        } else {
-                            Cell::from("Complete").style(Style::default().fg(Color::Green))
-                        };
-                        (
-                            status,
-                            Cell::from(format!("{:?}", jr.task)),
-                            Cell::from(
-                                x.iter()
-                                    .map(|x| match &x {
-                                        Ok(x) => String::from_utf8(x.stdout.clone())
-                                            .expect("Failed to make string"),
-                                        Err(e) => format!("{e}"),
-                                    })
-                                    .collect::<Vec<String>>()
-                                    .join(" "),
-                            ),
-                        )
-                    }
-                    Err(e) => (
-                        Cell::from("In progress").style(Style::default().fg(Color::Blue)),
-                        Cell::from(format!("{}", jr.task)),
-                        Cell::from(format!("{e}")),
-                    ),
-                    x => (
-                        Cell::from("Unknown").style(Style::default()),
-                        Cell::from(format!("{}", jr.task)),
-                        Cell::from(format!("{:?}", x)),
-                    ),
-                };
-
-                Row::new(vec![Cell::from(jr.task.name()), status, ty, output])
+            .map(|jt| {
+                columns
+                    .iter()
+                    .map(|(_, _, f)| f(jt))
+                    .map(|s| Cell::from(s))
+                    .collect()
             })
+            .map(|x: Vec<Cell>| Row::new(x))
             .collect();
+
+        let widths = columns
+            .iter()
+            .map(|(_, width, _)| *width)
+            .collect::<Vec<Constraint>>();
 
         let table = Table::new(rows)
             .block(
@@ -126,23 +110,19 @@ impl State {
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded),
             )
-            // .style(Style::default().fg(Color::White))
-            .widths(&[
-                Constraint::Percentage(20),
-                Constraint::Percentage(6),
-                Constraint::Percentage(14),
-                Constraint::Percentage(60),
-            ])
-            .highlight_style(
-                Style::default().bg(Color::Rgb(40, 40, 90)), // .fg(Color::Black)
-                                                             // .add_modifier(Modifier::BOLD),
-            )
+            .widths(&widths)
+            .highlight_style(Style::default().bg(Color::Rgb(40, 40, 90)))
             .highlight_symbol("> ")
             .column_spacing(1)
             .header(
-                Row::new(vec!["Task", "Status", "Type", "Output"])
-                    .bottom_margin(1)
-                    .style(Style::default().add_modifier(Modifier::BOLD)),
+                Row::new(
+                    columns
+                        .iter()
+                        .map(|(title, _, _)| title)
+                        .map(|x| Cell::from(*x)),
+                )
+                .bottom_margin(1)
+                .style(Style::default().add_modifier(Modifier::BOLD)),
             );
 
         let chunks = Layout::default()
@@ -156,81 +136,17 @@ impl State {
     }
 
     fn draw_task<B: Backend>(&mut self, f: &mut Frame<B>, runner: &JobRunner) {
-        let thread = runner.threads[self.job_table.selected().expect("NO SELECTION")]
-            .thread
-            .borrow();
-        let (status, output) = match &(*thread) {
-            Ok(TaskResult::Script(Err(e))) => (
-                Span::styled("Failed", Style::default().fg(Color::Red)),
-                vec![Spans::from(vec![Span::raw(format!("{e:?}"))])],
-            ),
-            Ok(TaskResult::Script(Ok(x))) => (
-                Span::styled("Complete", Style::default().fg(Color::Green)),
-                vec![Spans::from(vec![Span::raw(
-                    String::from_utf8(x.stdout.clone()).expect("Failed to make string"),
-                )])],
-            ),
-            Ok(TaskResult::Serial(x)) => {
-                let errors = x.iter().fold(String::new(), |acc, x| {
-                    if let Err(e) = x {
-                        format!("{}:{}", acc, e)
-                    } else {
-                        acc
-                    }
-                });
+        let thread = &runner.threads[self.job_table.selected().expect("NO SELECTION")];
 
-                let status = if errors.len() != 0 {
-                    Span::styled("Error", Style::default().fg(Color::Red))
-                } else {
-                    Span::styled("Complete", Style::default().fg(Color::Green))
-                };
-
-                (
-                    status.clone(),
-                    x.iter()
-                        .enumerate()
-                        .map(|(i, x)| {
-                            let task_name = if let Task::Serial(t) =
-                                &runner.job.tasks[self.job_table.selected().expect("NO SELECTION")]
-                            {
-                                t[i].name.clone()
-                            } else {
-                                "".to_string()
-                            };
-
-                            let status = if x.is_err() {
-                                Span::styled("Error", Style::default().fg(Color::Red))
-                            } else {
-                                Span::styled("Complete", Style::default().fg(Color::Green))
-                            };
-
-                            let output = match &x {
-                                Ok(x) => String::from_utf8(x.stdout.clone())
-                                    .expect("Failed to make string"),
-                                Err(e) => format!("{e}"),
-                            };
-
-                            let title_text = format!("Task[{}] {} - ", i, task_name);
-                            let title = Spans::from(vec![Span::raw(title_text.clone()), status]);
-
-                            let mut lines: Vec<Spans> = output
-                                .lines()
-                                .map(|l| Spans::from(vec![Span::raw(String::from(l))]))
-                                .collect();
-                            lines.insert(0, title);
-                            lines.push(Spans::from(vec![Span::raw("⎯".repeat(35))]));
-
-                            lines
-                        })
-                        .flatten()
-                        .collect(),
-                )
-            }
-            Err(e) => (
-                Span::styled("In progress", Style::default().fg(Color::Blue)),
-                vec![Spans::from(vec![Span::raw(format!("{e}"))])],
-            ),
-        };
+        let output = thread.runners.iter().fold(String::new(), |acc, r| {
+            format!(
+                "{}{}",
+                acc,
+                String::from_utf8(r.stdout()).expect("Failed to stringify output")
+            )
+        });
+        let output = Text::from(output);
+        let status = Span::from("STATUS");
 
         let paragraph = Paragraph::new(output)
             .block(
@@ -247,7 +163,6 @@ impl State {
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded),
             )
-            // .style(Style::default().fg(Color::White).bg(Color::Black))
             .alignment(Alignment::Left)
             .wrap(Wrap { trim: true });
 

@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
-use openssh::{KnownHosts, Session};
+use anyhow::{anyhow, bail, Result};
+use openssh::{KnownHosts, Session, SessionBuilder};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_dhall::StaticType;
@@ -11,6 +11,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::watch::{channel, Receiver};
 
 mod command;
+use command::CommandRunner;
 
 /// Tasks are always ran in parallel
 #[derive(Clone, Debug, Serialize, Deserialize, StaticType, JsonSchema)]
@@ -22,7 +23,7 @@ pub struct Job {
 #[derive(Clone, Debug)]
 pub struct JobThread {
     pub task: Task,
-    pub thread: Receiver<Result<TaskResult>>,
+    pub runners: Vec<CommandRunner>,
 }
 
 #[derive(Clone, Debug)]
@@ -37,14 +38,9 @@ impl Job {
             threads: self
                 .tasks
                 .iter()
-                .map(|t| {
-                    let thread_t = t.clone();
-                    let (tx, rx) = channel(Err(anyhow!("No data")));
-                    std::thread::spawn(move || tx.send(thread_t.run()));
-                    JobThread {
-                        task: t.clone(),
-                        thread: rx,
-                    }
+                .map(|t| JobThread {
+                    task: t.clone(),
+                    runners: t.clone().into_runners(),
                 })
                 .collect(),
             job: self,
@@ -65,13 +61,6 @@ pub enum TaskResult {
 }
 
 impl Task {
-    pub fn run(&self) -> Result<TaskResult> {
-        match self {
-            Task::Script(s) => Ok(TaskResult::Script(s.run())),
-            Task::Serial(ss) => Ok(TaskResult::Serial(ss.iter().map(|s| s.run()).collect())),
-        }
-    }
-
     pub fn name(&self) -> String {
         match self {
             Task::Script(s) => s.name.clone(),
@@ -80,6 +69,28 @@ impl Task {
                 .map(|s| s.name.clone())
                 .collect::<Vec<String>>()
                 .join(" => "),
+        }
+    }
+
+    pub fn type_name(&self) -> String {
+        match self {
+            Self::Script(s) => {
+                match &s.destination {
+                    Destination::Local => "Local".to_string(),
+                    Destination::Remote(r) => format!("Remote: {}", r)
+                }
+            },
+            Self::Serial(_) => "Serial".to_string()
+        }
+    }
+
+    fn into_runners(self) -> Vec<CommandRunner> {
+        match self {
+            Task::Script(s) => vec![s.try_into_runner().expect("Failed to make runner")],
+            Task::Serial(ss) => ss
+                .into_iter()
+                .map(|s| s.try_into_runner().expect("Failed to make runner"))
+                .collect(),
         }
     }
 }
@@ -128,43 +139,13 @@ impl Default for Script {
 }
 
 impl Script {
-    pub fn run(&self) -> Result<Output> {
-        match &self.destination {
-            Destination::Local => self.run_local(),
-            Destination::Remote(remote) => self.run_remote(&remote),
-        }
-    }
-
-    fn run_local(&self) -> Result<Output> {
-        let script = self.write_script()?.into_os_string();
-        Command::new(self.environment.with_shell(&self.shell)?)
-            .arg(script)
-            .output()
-            .map_err(|e| anyhow!("{}", e))
-    }
-
-    fn run_remote(&self, remote: &String) -> Result<Output> {
-        let runtime = Runtime::new()?;
-
-        runtime.block_on(async move {
-            let session = Session::connect_mux(remote, KnownHosts::Strict).await?;
-            session
-                .command(self.environment.with_shell(&self.shell)?)
-                .arg(
-                    self.write_remote_script(remote)?
-                        .into_os_string()
-                        .into_string()
-                        .map_err(|_| anyhow!("Failed to stringify path"))?,
-                )
-                .output()
-                .await
-                .map_err(|e| anyhow!("{e}"))
-        })
-    }
-
     /// Write out a bash script to /tmp for execution
-    fn write_remote_script(&self, remote: &String) -> Result<PathBuf> {
+    fn write_remote_script(&self) -> Result<PathBuf> {
         let script = self.write_script()?;
+        let remote = match &self.destination {
+            Destination::Remote(remote) => remote,
+            _ => bail!("Not actually a remote call"),
+        };
         if Command::new("scp")
             .arg("-C")
             .arg(script.clone().into_os_string())
@@ -194,6 +175,37 @@ impl Script {
 
         file.write_all(self.script.as_bytes())?;
         Ok(path)
+    }
+
+    fn try_into_runner(self) -> Result<CommandRunner> {
+        match &self.destination {
+            Destination::Local => {
+                let script = self.write_script()?.into_os_string();
+                Ok(CommandRunner::from_command(
+                    Command::new(self.environment.with_shell(&self.shell)?)
+                        .arg(script)
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped()),
+                ))
+            }
+            Destination::Remote(remote) => {
+                let script = self
+                    .write_remote_script()?
+                    .into_os_string()
+                    .into_string()
+                    .expect("Failed to stringify path");
+                let shell = self
+                    .environment
+                    .with_shell(&self.shell)
+                    .expect("Failed to set env");
+                let session = SessionBuilder::default();
+                Ok(CommandRunner::from_command_ssh(
+                    session,
+                    remote.clone(),
+                    format!("{} {}", shell.clone(), script.clone()),
+                ))
+            }
+        }
     }
 }
 
